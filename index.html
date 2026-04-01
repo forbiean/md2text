@@ -1,0 +1,761 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MD → TXT 转换器</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@300;400;500;700&display=swap');
+
+  :root {
+    --bg-deep: #0a0e17;
+    --bg-panel: #111827;
+    --bg-editor: #0d1321;
+    --bg-hover: #1e293b;
+    --border: #1e2d4a;
+    --border-glow: #2563eb33;
+    --accent: #3b82f6;
+    --accent-dim: #1d4ed8;
+    --accent-glow: #3b82f620;
+    --text: #e2e8f0;
+    --text-dim: #64748b;
+    --text-muted: #475569;
+    --green: #10b981;
+    --green-dim: #065f46;
+    --orange: #f59e0b;
+    --red: #ef4444;
+    --radius: 10px;
+    --mono: 'JetBrains Mono', 'Consolas', monospace;
+    --sans: 'Noto Sans SC', system-ui, sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    height: 100%;
+    overflow: hidden;
+  }
+
+  body {
+    font-family: var(--sans);
+    background: var(--bg-deep);
+    color: var(--text);
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Grain overlay ── */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    pointer-events: none;
+    opacity: 0.025;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  /* ── Header ── */
+  header {
+    padding: 16px 28px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(180deg, #111827 0%, #0f172a 100%);
+    flex-shrink: 0;
+    position: relative;
+  }
+
+  header::after {
+    content: '';
+    position: absolute;
+    bottom: -1px;
+    left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--accent) 30%, var(--accent) 70%, transparent);
+    opacity: 0.3;
+  }
+
+  .logo {
+    width: 36px; height: 36px;
+    background: linear-gradient(135deg, var(--accent), #8b5cf6);
+    border-radius: 8px;
+    display: grid;
+    place-items: center;
+    font-family: var(--mono);
+    font-weight: 700;
+    font-size: 13px;
+    color: #fff;
+    letter-spacing: -0.5px;
+    flex-shrink: 0;
+    box-shadow: 0 0 20px #3b82f630;
+  }
+
+  header h1 {
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: -0.3px;
+    background: linear-gradient(135deg, #e2e8f0, #94a3b8);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  header .subtitle {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-left: auto;
+    font-family: var(--mono);
+    font-weight: 400;
+  }
+
+  /* ── Main grid ── */
+  .workspace {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+    min-height: 0;
+    position: relative;
+  }
+
+  /* Center divider */
+  .workspace::before {
+    content: '';
+    position: absolute;
+    top: 0; bottom: 0;
+    left: 50%;
+    width: 1px;
+    background: var(--border);
+    z-index: 2;
+  }
+
+  .pane {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    position: relative;
+  }
+
+  .pane:first-child { border-right: none; }
+
+  /* ── Pane toolbar ── */
+  .pane-toolbar {
+    display: flex;
+    align-items: center;
+    padding: 10px 16px;
+    gap: 8px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-panel);
+    flex-shrink: 0;
+  }
+
+  .pane-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    color: var(--text-dim);
+    font-family: var(--mono);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .pane-label .dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .pane:first-child .dot { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+  .pane:last-child .dot { background: var(--green); box-shadow: 0 0 8px var(--green); }
+
+  .pane-actions {
+    margin-left: auto;
+    display: flex;
+    gap: 4px;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-dim);
+    font-size: 12px;
+    font-family: var(--sans);
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+
+  .btn:hover {
+    background: var(--bg-hover);
+    color: var(--text);
+    border-color: #334155;
+  }
+
+  .btn:active { transform: scale(0.96); }
+
+  .btn svg {
+    width: 14px; height: 14px;
+    stroke: currentColor;
+    fill: none;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .btn.copied {
+    border-color: var(--green-dim);
+    color: var(--green);
+  }
+
+  /* ── Editor area ── */
+  .editor-wrap {
+    flex: 1;
+    min-height: 0;
+    position: relative;
+  }
+
+  textarea {
+    width: 100%;
+    height: 100%;
+    padding: 20px;
+    background: var(--bg-editor);
+    border: none;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13.5px;
+    line-height: 1.7;
+    resize: none;
+    outline: none;
+    tab-size: 4;
+  }
+
+  textarea::placeholder { color: var(--text-muted); }
+
+  textarea::-webkit-scrollbar { width: 8px; }
+  textarea::-webkit-scrollbar-track { background: transparent; }
+  textarea::-webkit-scrollbar-thumb {
+    background: #1e293b;
+    border-radius: 4px;
+  }
+  textarea::-webkit-scrollbar-thumb:hover { background: #334155; }
+
+  #output {
+    background: #080d16;
+    cursor: default;
+  }
+
+  /* ── Footer ── */
+  footer {
+    padding: 12px 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    border-top: 1px solid var(--border);
+    background: var(--bg-panel);
+    flex-shrink: 0;
+  }
+
+  .footer-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 8px 20px;
+    border-radius: 7px;
+    font-size: 13px;
+    font-family: var(--sans);
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-dim);
+  }
+
+  .footer-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text);
+    border-color: #334155;
+  }
+
+  .footer-btn:active { transform: scale(0.97); }
+
+  .footer-btn svg {
+    width: 15px; height: 15px;
+    stroke: currentColor;
+    fill: none;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .footer-btn.primary {
+    background: linear-gradient(135deg, var(--accent-dim), #1e40af);
+    border-color: var(--accent);
+    color: #e0e7ff;
+  }
+
+  .footer-btn.primary:hover {
+    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    box-shadow: 0 0 20px var(--accent-glow);
+  }
+
+  .footer-btn.danger:hover {
+    border-color: #7f1d1d;
+    color: var(--red);
+  }
+
+  /* ── Toast ── */
+  .toast {
+    position: fixed;
+    bottom: 70px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    padding: 10px 22px;
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    font-size: 13px;
+    color: var(--text);
+    opacity: 0;
+    pointer-events: none;
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    z-index: 100;
+    font-family: var(--sans);
+  }
+
+  .toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+
+  /* ── Responsive ── */
+  @media (max-width: 800px) {
+    .workspace {
+      grid-template-columns: 1fr;
+      grid-template-rows: 1fr 1fr;
+    }
+    .workspace::before {
+      top: 50%; bottom: auto;
+      left: 0; right: 0;
+      width: auto; height: 1px;
+    }
+    .pane:first-child { border-right: none; border-bottom: 1px solid var(--border); }
+    header .subtitle { display: none; }
+  }
+
+  /* ── Animations ── */
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .pane { animation: fadeIn 0.5s ease both; }
+  .pane:last-child { animation-delay: 0.1s; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">M→T</div>
+  <h1>Markdown → 纯文本 转换器</h1>
+  <span class="subtitle">实时转换 · 无依赖</span>
+</header>
+
+<div class="workspace">
+  <div class="pane">
+    <div class="pane-toolbar">
+      <span class="pane-label"><span class="dot"></span>MARKDOWN 输入</span>
+      <div class="pane-actions">
+        <button class="btn" onclick="copyText('input')" id="btn-copy-md">
+          <svg><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+          复制
+        </button>
+        <button class="btn" onclick="download('input', 'markdown.md')">
+          <svg><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          下载 .md
+        </button>
+      </div>
+    </div>
+    <div class="editor-wrap">
+      <textarea id="input" placeholder="在此输入 Markdown 文本..." spellcheck="false"></textarea>
+    </div>
+  </div>
+
+  <div class="pane">
+    <div class="pane-toolbar">
+      <span class="pane-label"><span class="dot"></span>纯文本 输出</span>
+      <div class="pane-actions">
+        <button class="btn" onclick="copyText('output')" id="btn-copy-txt">
+          <svg><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+          复制
+        </button>
+        <button class="btn" onclick="download('output', 'plaintext.txt')">
+          <svg><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          下载 .txt
+        </button>
+      </div>
+    </div>
+    <div class="editor-wrap">
+      <textarea id="output" readonly placeholder="转换结果将在此显示..."></textarea>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <button class="footer-btn primary" onclick="loadExample()">
+    <svg><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+    加载示例
+  </button>
+  <button class="footer-btn danger" onclick="clearAll()">
+    <svg><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+    清空内容
+  </button>
+</footer>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── Sample Markdown ──
+const SAMPLE_MD = `# Markdown 转纯文本演示
+
+这是一个功能完整的 **Markdown 转纯文本** 工具，支持实时预览。
+
+## 文本格式
+
+这段文字包含 **加粗文本**、*斜体文本*、~~删除线文本~~ 和 \`行内代码\`。
+还可以混合使用，比如 ***加粗斜体*** 效果。
+
+## 无序列表
+
+- 第一个项目
+- 第二个项目
+  - 嵌套子项目 A
+  - 嵌套子项目 B
+    - 更深层嵌套
+- 第三个项目
+
+## 有序列表
+
+1. 准备开发环境
+2. 编写核心逻辑
+   1. 解析 Markdown 语法
+   2. 转换为纯文本
+3. 测试与发布
+
+## 链接与图片
+
+访问 [GitHub](https://github.com) 获取更多开源项目。
+这是一张示例图片：![风景照片](https://example.com/landscape.jpg)
+
+## 引用
+
+> 代码是写给人看的，只是恰好能被机器执行。
+> — Harold Abelson
+
+> 多层引用也支持：
+>> 这是嵌套引用的内容。
+
+## 代码块
+
+\`\`\`javascript
+function greet(name) {
+  console.log(\`你好, \${name}!\`);
+  return true;
+}
+\`\`\`
+
+## 表格
+
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| 标题转换 | 已完成 | 支持 h1-h6 |
+| 列表转换 | 已完成 | 支持嵌套 |
+| 表格转换 | 已完成 | 对齐显示 |
+| 代码块 | 已完成 | 缩进展示 |
+
+---
+
+## 任务列表
+
+- [x] 完成基础转换
+- [x] 添加实时预览
+- [ ] 优化表格对齐
+- [ ] 支持更多语法
+
+以上就是一份完整的 Markdown 语法演示。`;
+
+// ── Markdown to Plain Text Converter ──
+function md2txt(md) {
+  let lines = md.split('\n');
+  let result = [];
+  let inCodeBlock = false;
+  let inTable = false;
+  let tableRows = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i];
+
+    // Code block toggle
+    if (/^(\s*)`{3,}/.test(line)) {
+      if (!inCodeBlock) {
+        inCodeBlock = true;
+        continue;
+      } else {
+        inCodeBlock = false;
+        continue;
+      }
+    }
+
+    if (inCodeBlock) {
+      result.push('    ' + line);
+      continue;
+    }
+
+    // Table detection
+    if (/^\s*\|(.+\|)+\s*$/.test(line)) {
+      // Skip separator rows
+      if (/^\s*\|[\s\-:|]+\|\s*$/.test(line)) continue;
+      tableRows.push(line);
+      // Look ahead: if next line is not a table row, flush
+      let nextLine = lines[i + 1];
+      if (!nextLine || !/^\s*\|(.+\|)+\s*$/.test(nextLine) ||
+          /^\s*\|[\s\-:|]+\|\s*$/.test(nextLine) && (i + 2 >= lines.length || !/^\s*\|(.+\|)+\s*$/.test(lines[i + 2]))) {
+        // Check if the separator is next
+        if (nextLine && /^\s*\|[\s\-:|]+\|\s*$/.test(nextLine)) {
+          continue; // wait for more rows after separator
+        }
+        // Flush table
+        if (tableRows.length > 0) {
+          result.push(...formatTable(tableRows));
+          tableRows = [];
+        }
+      }
+      continue;
+    } else {
+      // If we were collecting table rows and hit a non-table line
+      if (tableRows.length > 0) {
+        result.push(...formatTable(tableRows));
+        tableRows = [];
+      }
+    }
+
+    // Horizontal rule
+    if (/^\s*([-*_])\s*\1\s*\1[\s\-*_]*$/.test(line) && line.replace(/\s/g, '').length >= 3) {
+      result.push('────────────────────────────────');
+      continue;
+    }
+
+    // Headings
+    let headingMatch = line.match(/^(#{1,6})\s+(.+?)(?:\s+#+\s*)?$/);
+    if (headingMatch) {
+      let level = headingMatch[1].length;
+      let text = inlineConvert(headingMatch[2]);
+      if (level === 1) {
+        result.push(text.toUpperCase());
+        result.push('═'.repeat(Math.min(text.length * 2, 40)));
+      } else if (level === 2) {
+        result.push(text);
+        result.push('─'.repeat(Math.min(text.length * 2, 32)));
+      } else {
+        result.push(text);
+      }
+      continue;
+    }
+
+    // Blockquote
+    let quoteMatch = line.match(/^(\s*)(>{1,})\s?(.*)/);
+    if (quoteMatch) {
+      let depth = quoteMatch[2].length;
+      let prefix = '│ '.repeat(depth);
+      result.push(prefix + inlineConvert(quoteMatch[3]));
+      continue;
+    }
+
+    // Unordered list
+    let ulMatch = line.match(/^(\s*)[-*+]\s+(\[[ xX]\]\s+)?(.*)$/);
+    if (ulMatch) {
+      let indent = Math.floor(ulMatch[1].length / 2);
+      let checkbox = ulMatch[2];
+      let text = inlineConvert(ulMatch[3]);
+      let prefix = '  '.repeat(indent);
+      if (checkbox) {
+        let checked = /[xX]/.test(checkbox);
+        result.push(prefix + (checked ? '[x] ' : '[ ] ') + text);
+      } else {
+        let bullets = ['•', '◦', '▪', '▸'];
+        result.push(prefix + bullets[Math.min(indent, bullets.length - 1)] + ' ' + text);
+      }
+      continue;
+    }
+
+    // Ordered list
+    let olMatch = line.match(/^(\s*)(\d+)\.\s+(.*)$/);
+    if (olMatch) {
+      let indent = Math.floor(olMatch[1].length / 3);
+      let num = olMatch[2];
+      let text = inlineConvert(olMatch[3]);
+      result.push('  '.repeat(indent) + num + '. ' + text);
+      continue;
+    }
+
+    // Empty line
+    if (line.trim() === '') {
+      result.push('');
+      continue;
+    }
+
+    // Normal paragraph
+    result.push(inlineConvert(line));
+  }
+
+  // Flush remaining table rows
+  if (tableRows.length > 0) {
+    result.push(...formatTable(tableRows));
+  }
+
+  return result.join('\n');
+}
+
+function inlineConvert(text) {
+  // Images
+  text = text.replace(/!\[([^\]]*)\]\([^)]+\)/g, '[图片: $1]');
+  // Links
+  text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1 ($2)');
+  // Bold+italic
+  text = text.replace(/\*{3}(.+?)\*{3}/g, '$1');
+  text = text.replace(/_{3}(.+?)_{3}/g, '$1');
+  // Bold
+  text = text.replace(/\*{2}(.+?)\*{2}/g, '$1');
+  text = text.replace(/_{2}(.+?)_{2}/g, '$1');
+  // Italic
+  text = text.replace(/\*(.+?)\*/g, '$1');
+  text = text.replace(/_(.+?)_/g, '$1');
+  // Strikethrough
+  text = text.replace(/~~(.+?)~~/g, '$1');
+  // Inline code
+  text = text.replace(/`([^`]+)`/g, '$1');
+  // HTML tags
+  text = text.replace(/<[^>]+>/g, '');
+  return text;
+}
+
+function formatTable(rows) {
+  let parsed = rows.map(row => {
+    return row.replace(/^\s*\|/, '').replace(/\|\s*$/, '').split('|').map(c => c.trim());
+  });
+
+  if (parsed.length === 0) return [];
+
+  // Calculate column widths
+  let colCount = parsed[0].length;
+  let widths = new Array(colCount).fill(0);
+  parsed.forEach(row => {
+    row.forEach((cell, j) => {
+      if (j < colCount) {
+        let converted = inlineConvert(cell);
+        widths[j] = Math.max(widths[j], getDisplayWidth(converted));
+      }
+    });
+  });
+
+  let output = [];
+  let sep = '┼' + widths.map(w => '─'.repeat(w + 2)).join('┼') + '┼';
+
+  parsed.forEach((row, idx) => {
+    let cells = row.map((cell, j) => {
+      let converted = inlineConvert(cell);
+      let pad = widths[j] - getDisplayWidth(converted);
+      return ' ' + converted + ' '.repeat(pad) + ' ';
+    });
+    output.push('│' + cells.join('│') + '│');
+    if (idx === 0) output.push(sep);
+  });
+
+  return output;
+}
+
+// Simple CJK-aware display width
+function getDisplayWidth(str) {
+  let w = 0;
+  for (let ch of str) {
+    let code = ch.codePointAt(0);
+    if (code >= 0x4e00 && code <= 0x9fff ||
+        code >= 0x3000 && code <= 0x303f ||
+        code >= 0xff00 && code <= 0xffef ||
+        code >= 0x3400 && code <= 0x4dbf) {
+      w += 2;
+    } else {
+      w += 1;
+    }
+  }
+  return w;
+}
+
+// ── UI Functions ──
+const inputEl = document.getElementById('input');
+const outputEl = document.getElementById('output');
+
+function convert() {
+  outputEl.value = md2txt(inputEl.value);
+}
+
+inputEl.addEventListener('input', convert);
+
+function copyText(id) {
+  let el = document.getElementById(id);
+  navigator.clipboard.writeText(el.value).then(() => {
+    showToast('已复制到剪贴板');
+    let btnId = id === 'input' ? 'btn-copy-md' : 'btn-copy-txt';
+    let btn = document.getElementById(btnId);
+    btn.classList.add('copied');
+    setTimeout(() => btn.classList.remove('copied'), 1500);
+  });
+}
+
+function download(id, filename) {
+  let el = document.getElementById(id);
+  if (!el.value.trim()) { showToast('没有内容可下载'); return; }
+  let blob = new Blob([el.value], { type: 'text/plain;charset=utf-8' });
+  let a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  showToast('已开始下载 ' + filename);
+}
+
+function loadExample() {
+  inputEl.value = SAMPLE_MD;
+  convert();
+  showToast('已加载示例文本');
+}
+
+function clearAll() {
+  inputEl.value = '';
+  outputEl.value = '';
+  showToast('已清空所有内容');
+}
+
+function showToast(msg) {
+  let t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.classList.remove('show'), 2000);
+}
+
+// Load example on start
+loadExample();
+</script>
+</body>
+</html>
