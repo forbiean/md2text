@@ -754,6 +754,20 @@ function showToast(msg) {
   t._timer = setTimeout(() => t.classList.remove('show'), 2000);
 }
 
+// ── Scroll sync ──
+let syncingScroll = false;
+
+function syncScroll(source, target) {
+  if (syncingScroll) return;
+  syncingScroll = true;
+  let ratio = source.scrollTop / (source.scrollHeight - source.clientHeight || 1);
+  target.scrollTop = ratio * (target.scrollHeight - target.clientHeight);
+  syncingScroll = false;
+}
+
+inputEl.addEventListener('scroll', () => syncScroll(inputEl, outputEl));
+outputEl.addEventListener('scroll', () => syncScroll(outputEl, inputEl));
+
 // Load example on start
 loadExample();
 </script>
